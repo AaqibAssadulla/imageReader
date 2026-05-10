@@ -657,7 +657,7 @@ function convertFileToBase64(imageFile) {
  * speed test fields as a JSON object.
  *
  * Gemini API endpoint used:
- *   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
+ *   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
  *
  * The prompt instructs Gemini to return ONLY a JSON object (no markdown, no
  * prose) so we can safely parse the response.
@@ -671,8 +671,8 @@ async function extractSpeedTestDataWithGemini(base64ImageData, imageMimeType) {
   // Gemini API key — replace with your actual key or load from a secure config
   const GEMINI_API_KEY = 'AIzaSyCWZjBwXzPqQnhPXP61DG1WgOLRQblgvOY';
 
-  // The model being used: gemini-1.5-flash is fast and vision-capable
-  const GEMINI_MODEL = 'gemini-1.5-flash';
+  // The model being used: gemini-2.0-flash is fast and vision-capable
+  const GEMINI_MODEL = 'gemini-2.0-flash';
 
   const GEMINI_ENDPOINT =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
