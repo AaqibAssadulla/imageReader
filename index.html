@@ -89,6 +89,54 @@
     margin: 0 auto;
   }
 
+  /* ── API Key Section ──────────────────────────────────────── */
+  #apiKeySection {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 1.5rem;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    flex-wrap: wrap;
+  }
+
+  #apiKeySection label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  #apiKeyInput {
+    flex: 1;
+    min-width: 180px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 7px 12px;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  #apiKeyInput::placeholder { color: var(--muted); }
+  #apiKeyInput:focus { border-color: var(--accent); }
+
+  #keyStatus {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted2);
+    white-space: nowrap;
+    margin-left: 4px;
+  }
+
   /* Upload Zone */
   .upload-zone {
     border: 1.5px dashed var(--border2);
@@ -405,12 +453,20 @@
 </header>
 
 <main>
-    <div id="apiKeySection">
-      <input type="password" id="apiKeyInput" placeholder="Enter Gemini API key…" />
-      <button id="saveKeyBtn">Save Key</button>
-      <button id="clearKeyBtn">Clear Key</button>
-      <span id="keyStatus"></span>
-    </div>
+  <div id="apiKeySection">
+    <label for="apiKeyInput">Gemini API Key</label>
+    <input type="password" id="apiKeyInput" placeholder="AIza…" />
+    <button id="saveKeyBtn">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      Save
+    </button>
+    <button id="clearKeyBtn" class="danger">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+      Clear
+    </button>
+    <span id="keyStatus"></span>
+  </div>
+
   <div class="upload-zone" id="dropZone">
     <input type="file" id="fileInput" accept="image/*" multiple />
     <div class="upload-icon">
@@ -479,73 +535,53 @@
 <div class="toasts" id="toasts"></div>
 
 <script>
-/**
- * speedtest_extractor.js
- * 
- * Extracts structured data from TRAI MySpeed (or similar) mobile speed test
- * result screenshots using the Google Gemini Vision API.
- * 
- * Flow:
- *   1. User drops / selects screenshot images
- *   2. Each image is converted to Base64 and sent to Gemini Vision
- *   3. Gemini returns structured JSON with speed test fields
- *   4. Results are displayed in a colour-coded table
- *   5. User can export all results as a CSV file
- */
-
-  // ─── API Key management (persisted in localStorage) ───────────────────────────
-const STORAGE_KEY = 'gemini_api_key'; // key name used in localStorage
+const STORAGE_KEY = 'gemini_api_key';
 
 const apiKeyInput  = document.getElementById('apiKeyInput');
 const saveKeyBtn   = document.getElementById('saveKeyBtn');
 const clearKeyBtn  = document.getElementById('clearKeyBtn');
 const keyStatusEl  = document.getElementById('keyStatus');
 
-/** Loads the saved key from localStorage into the input field on page load */
 function loadSavedApiKey() {
   const savedKey = localStorage.getItem(STORAGE_KEY);
   if (savedKey) {
     apiKeyInput.value = savedKey;
-    keyStatusEl.textContent = '✓ Key loaded from storage';
+    keyStatusEl.textContent = '✓ Key loaded';
+    keyStatusEl.style.color = 'var(--accent)';
   }
 }
 
-/** Saves the key from the input into localStorage */
 saveKeyBtn.addEventListener('click', () => {
   const key = apiKeyInput.value.trim();
-  if (!key) { keyStatusEl.textContent = '⚠ Enter a key first'; return; }
+  if (!key) {
+    keyStatusEl.textContent = '⚠ Enter a key first';
+    keyStatusEl.style.color = '#ffd166';
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, key);
-  keyStatusEl.textContent = '✓ Key saved';
+  keyStatusEl.textContent = '✓ Saved';
+  keyStatusEl.style.color = 'var(--accent)';
 });
 
-/** Removes the key from localStorage and clears the input */
 clearKeyBtn.addEventListener('click', () => {
   localStorage.removeItem(STORAGE_KEY);
   apiKeyInput.value = '';
-  keyStatusEl.textContent = 'Key cleared';
+  keyStatusEl.textContent = 'Cleared';
+  keyStatusEl.style.color = 'var(--muted)';
 });
 
-// Run on page load so a previously saved key is ready immediately
 loadSavedApiKey();
 
-// ─── Column order used for the results table and CSV export ───────────────────
 const CSV_COLUMN_KEYS = [
   'date', 'time', 'operator', 'tech',
   'download', 'upload', 'latency', 'jitter', 'packetLoss',
   'coverage', 'location', 'server', 'testId'
 ];
 
-// ─── Application state ────────────────────────────────────────────────────────
-/** @type {{ file: File, status: 'pending'|'processing'|'done'|'error', result: object|null }[]} */
 let imageQueue = [];
-
-/** Extracted results accumulated across all processed images */
 let extractedResults = [];
-
-/** Prevents double-clicking "Extract" while a batch is running */
 let isExtractionRunning = false;
 
-// ─── DOM references ───────────────────────────────────────────────────────────
 const dropZoneEl       = document.getElementById('dropZone');
 const filePickerInput  = document.getElementById('fileInput');
 const thumbnailQueue   = document.getElementById('queue');
@@ -560,7 +596,6 @@ const resultsSection   = document.getElementById('tableSection');
 const resultsTableBody = document.getElementById('resultsBody');
 const recordCountLabel = document.getElementById('recordCount');
 
-// ─── Drag-and-drop wiring ─────────────────────────────────────────────────────
 dropZoneEl.addEventListener('dragover', event => {
   event.preventDefault();
   dropZoneEl.classList.add('drag-over');
@@ -573,157 +608,87 @@ dropZoneEl.addEventListener('dragleave', () => {
 dropZoneEl.addEventListener('drop', event => {
   event.preventDefault();
   dropZoneEl.classList.remove('drag-over');
-
-  const droppedImages = [...event.dataTransfer.files].filter(
-    file => file.type.startsWith('image/')
-  );
+  const droppedImages = [...event.dataTransfer.files].filter(f => f.type.startsWith('image/'));
   addImagesToQueue(droppedImages);
 });
 
-// ─── File picker wiring ───────────────────────────────────────────────────────
 filePickerInput.addEventListener('change', () => {
   addImagesToQueue([...filePickerInput.files]);
-  filePickerInput.value = ''; // reset so same file can be re-picked if needed
+  filePickerInput.value = '';
 });
 
-// ─── Add images to queue ──────────────────────────────────────────────────────
-/**
- * Appends new image files to the processing queue and refreshes the UI.
- * @param {File[]} newImageFiles
- */
 function addImagesToQueue(newImageFiles) {
   if (!newImageFiles.length) return;
-
-  newImageFiles.forEach(imageFile => {
-    imageQueue.push({ file: imageFile, status: 'pending', result: null });
-  });
-
+  newImageFiles.forEach(f => imageQueue.push({ file: f, status: 'pending', result: null }));
   renderThumbnailQueue();
   actionControls.style.display = 'flex';
 }
 
-// ─── Render thumbnail strip ───────────────────────────────────────────────────
-/**
- * Re-renders the thumbnail strip that shows each queued image and its status.
- */
 function renderThumbnailQueue() {
-  thumbnailQueue.innerHTML = imageQueue.map(queueItem => {
-    const previewUrl = URL.createObjectURL(queueItem.file);
-    return `
-      <div class="queue-thumb">
-        <img src="${previewUrl}" alt="screenshot thumbnail" />
-        <div class="status-overlay ${queueItem.status}">${queueItem.status}</div>
-      </div>
-    `;
+  thumbnailQueue.innerHTML = imageQueue.map(item => {
+    const url = URL.createObjectURL(item.file);
+    return `<div class="queue-thumb"><img src="${url}" alt="screenshot thumbnail" /><div class="status-overlay ${item.status}">${item.status}</div></div>`;
   }).join('');
 }
 
-// ─── Extract button: kick off batch processing ────────────────────────────────
 extractButton.addEventListener('click', async () => {
   if (isExtractionRunning) return;
-
-  const unprocessedItems = imageQueue.filter(item => item.status !== 'done');
-  if (!unprocessedItems.length) {
-    showToast('All images have already been processed.');
-    return;
-  }
+  const unprocessed = imageQueue.filter(i => i.status !== 'done');
+  if (!unprocessed.length) { showToast('All images have already been processed.'); return; }
 
   isExtractionRunning = true;
   extractButton.disabled = true;
   progressBarWrap.style.display = 'block';
   progressLabel.style.display  = 'block';
 
-  const totalImages  = unprocessedItems.length;
-  let processedCount = 0;
+  const total = unprocessed.length;
+  let done = 0;
 
-  // Process each unprocessed image sequentially to avoid rate-limit spikes
-  for (let index = 0; index < imageQueue.length; index++) {
-    const queueItem = imageQueue[index];
-    if (queueItem.status === 'done') continue;
-
-    queueItem.status = 'processing';
+  for (let i = 0; i < imageQueue.length; i++) {
+    const item = imageQueue[i];
+    if (item.status === 'done') continue;
+    item.status = 'processing';
     renderThumbnailQueue();
-
     try {
-      const base64ImageData = await convertFileToBase64(queueItem.file);
-      const imageMimeType   = queueItem.file.type || 'image/jpeg';
-
-      const extractedData = await extractSpeedTestDataWithGemini(base64ImageData, imageMimeType);
-
-      queueItem.result = extractedData;
-      queueItem.status = 'done';
-      extractedResults.push({ ...extractedData, _sourceIndex: index });
-
-    } catch (error) {
-      queueItem.status = 'error';
-      showToast(`Error on image ${index + 1}: ${error.message}`, 'error');
+      const b64  = await convertFileToBase64(item.file);
+      const mime = item.file.type || 'image/jpeg';
+      const data = await extractSpeedTestDataWithGemini(b64, mime);
+      item.result = data;
+      item.status = 'done';
+      extractedResults.push({ ...data, _sourceIndex: i });
+    } catch (err) {
+      item.status = 'error';
+      showToast(`Error on image ${i + 1}: ${err.message}`, 'error');
     }
-
-    processedCount++;
-    const percentComplete = Math.round((processedCount / totalImages) * 100);
-    progressBarFill.style.width  = `${percentComplete}%`;
-    progressLabel.textContent    = `${processedCount} / ${totalImages}`;
-
+    done++;
+    progressBarFill.style.width = `${Math.round((done / total) * 100)}%`;
+    progressLabel.textContent   = `${done} / ${total}`;
     renderThumbnailQueue();
     renderResultsTable();
   }
 
   isExtractionRunning = false;
   extractButton.disabled = false;
-  progressLabel.textContent = `${processedCount} / ${totalImages} complete`;
-
-  if (extractedResults.length) {
-    exportCsvButton.style.display = 'flex';
-  }
+  progressLabel.textContent = `${done} / ${total} complete`;
+  if (extractedResults.length) exportCsvButton.style.display = 'flex';
 });
 
-// ─── Utility: File → Base64 ───────────────────────────────────────────────────
-/**
- * Reads a File object and returns its Base64-encoded content (data-URL stripped).
- * @param {File} imageFile
- * @returns {Promise<string>} Raw Base64 string (no "data:…;base64," prefix)
- */
-function convertFileToBase64(imageFile) {
+function convertFileToBase64(file) {
   return new Promise((resolve, reject) => {
-    const fileReader = new FileReader();
-    fileReader.onload  = () => resolve(fileReader.result.split(',')[1]);
-    fileReader.onerror = () => reject(new Error('Failed to read file'));
-    fileReader.readAsDataURL(imageFile);
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result.split(',')[1]);
+    r.onerror = () => reject(new Error('Failed to read file'));
+    r.readAsDataURL(file);
   });
 }
 
-// ─── Gemini Vision API call ───────────────────────────────────────────────────
-/**
- * Sends a speed test screenshot to Google Gemini Vision and extracts structured
- * speed test fields as a JSON object.
- *
- * Gemini API endpoint used:
- *   POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
- *
- * The prompt instructs Gemini to return ONLY a JSON object (no markdown, no
- * prose) so we can safely parse the response.
- *
- * @param {string} base64ImageData - Raw Base64-encoded image bytes
- * @param {string} imageMimeType   - MIME type, e.g. "image/jpeg" or "image/png"
- * @returns {Promise<object>}       Parsed speed test data object
- */
 async function extractSpeedTestDataWithGemini(base64ImageData, imageMimeType) {
-
-  // Gemini API key — replace with your actual key or load from a secure config
-  
   const GEMINI_API_KEY = localStorage.getItem(STORAGE_KEY);
-  if (!GEMINI_API_KEY) {
-    throw new Error('No API key found. Please enter and save your Gemini API key first.');
-  }
+  if (!GEMINI_API_KEY) throw new Error('No API key found. Please enter and save your Gemini API key first.');
 
-  // The model being used: gemini-2.0-flash is fast and vision-capable
-  //const GEMINI_MODEL = 'gemini-2.0-flash';
-  const GEMINI_MODEL = 'gemini-2.5-flash-lite'; // separate free quota pool
+  const GEMINI_MODEL    = 'gemini-2.5-flash-lite';
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-  const GEMINI_ENDPOINT =
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-
-  // Prompt crafted so Gemini returns ONLY parseable JSON (no markdown fences)
   const extractionPrompt = `
 You are a data extraction assistant. The image is a TRAI MySpeed (or similar) mobile speed test result screenshot.
 
@@ -753,231 +718,105 @@ Field rules:
 - packetLoss       : number as percentage (e.g. 0.00 means 0.00%)
 `.trim();
 
-  // Build the Gemini request body with an inline image part + text prompt
-  const geminiRequestBody = {
-    contents: [{
-      parts: [
-        {
-          // Inline image encoded as Base64
-          inline_data: {
-            mime_type: imageMimeType,
-            data: base64ImageData
-          }
-        },
-        {
-          // Text prompt asking Gemini what to extract
-          text: extractionPrompt
-        }
-      ]
-    }],
-    generationConfig: {
-      // Low temperature = deterministic, factual extraction (no creativity needed)
-      temperature: 0.1,
-      maxOutputTokens: 512
-    }
+  const body = {
+    contents: [{ parts: [
+      { inline_data: { mime_type: imageMimeType, data: base64ImageData } },
+      { text: extractionPrompt }
+    ]}],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 512 }
   };
 
-  const apiResponse = await fetch(GEMINI_ENDPOINT, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(geminiRequestBody)
+  const res = await fetch(GEMINI_ENDPOINT, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
   });
 
-  if (!apiResponse.ok) {
-    const errorBody = await apiResponse.json().catch(() => ({}));
-    const errorMessage = errorBody?.error?.message || `HTTP ${apiResponse.status}`;
-    throw new Error(`Gemini API error: ${errorMessage}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Gemini API error: ${err?.error?.message || `HTTP ${res.status}`}`);
   }
 
-  const geminiResponse = await apiResponse.json();
-
-  // Gemini returns content under candidates[0].content.parts[].text
-  const rawResponseText = geminiResponse
-    ?.candidates?.[0]
-    ?.content
-    ?.parts
-    ?.map(part => part.text || '')
-    .join('')
-    .trim();
-
-  if (!rawResponseText) {
-    throw new Error('Gemini returned an empty response.');
-  }
-
-  // Strip any accidental markdown code fences Gemini may still emit
-  const cleanJsonText = rawResponseText
-    .replace(/```json/gi, '')
-    .replace(/```/g,      '')
-    .trim();
-
-  return JSON.parse(cleanJsonText);
+  const gemini = await res.json();
+  const raw = gemini?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  if (!raw) throw new Error('Gemini returned an empty response.');
+  const clean = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+  return JSON.parse(clean);
 }
 
-// ─── Table colour helpers ─────────────────────────────────────────────────────
-/**
- * Returns a CSS class name based on download/upload speed quality.
- * good  >= 10 Mbps  (green)
- * mid   >= 4 Mbps   (yellow)
- * bad   <  4 Mbps   (red)
- */
-function getSpeedQualityClass(speedMbps) {
-  if (speedMbps === null || speedMbps === undefined) return '';
-  if (speedMbps >= 10) return 'good';
-  if (speedMbps >= 4)  return 'mid';
-  return 'bad';
+function getSpeedQualityClass(v) {
+  if (v == null) return '';
+  return v >= 10 ? 'good' : v >= 4 ? 'mid' : 'bad';
 }
 
-/**
- * Returns a CSS class name based on latency quality.
- * good  <= 30 ms  (green)
- * mid   <= 80 ms  (yellow)
- * bad   >  80 ms  (red)
- */
-function getLatencyQualityClass(latencyMs) {
-  if (latencyMs === null || latencyMs === undefined) return '';
-  if (latencyMs <= 30) return 'good';
-  if (latencyMs <= 80) return 'mid';
-  return 'bad';
+function getLatencyQualityClass(v) {
+  if (v == null) return '';
+  return v <= 30 ? 'good' : v <= 80 ? 'mid' : 'bad';
 }
 
-/**
- * Wraps the network generation label (4G, 5G, 3G…) in a styled badge span.
- */
-function buildTechGenerationBadge(techGeneration) {
-  if (!techGeneration) return '—';
-
-  const upperTech = techGeneration.toUpperCase();
-  const cssClass  =
-    upperTech.includes('5G')                    ? 'g5'  :
-    upperTech.includes('4G') || upperTech.includes('LTE') ? 'g4'  :
-    upperTech.includes('3G')                    ? 'g3'  : 'lte';
-
-  return `<span class="tag ${cssClass}">${techGeneration}</span>`;
+function buildTechGenerationBadge(tech) {
+  if (!tech) return '—';
+  const u = tech.toUpperCase();
+  const cls = u.includes('5G') ? 'g5' : (u.includes('4G') || u.includes('LTE')) ? 'g4' : u.includes('3G') ? 'g3' : 'lte';
+  return `<span class="tag ${cls}">${tech}</span>`;
 }
 
-/** Returns the value if present, or an em-dash placeholder for empty cells. */
-function displayValue(value) {
-  return (value !== null && value !== undefined && value !== '') ? value : '—';
+function displayValue(v) {
+  return (v !== null && v !== undefined && v !== '') ? v : '—';
 }
 
-// ─── Render results table ─────────────────────────────────────────────────────
-/**
- * Rebuilds the full results table from the extractedResults array.
- * Called after each image completes so the table updates incrementally.
- */
 function renderResultsTable() {
-  if (!extractedResults.length) {
-    resultsSection.classList.remove('visible');
-    return;
-  }
-
+  if (!extractedResults.length) { resultsSection.classList.remove('visible'); return; }
   resultsSection.classList.add('visible');
-  recordCountLabel.textContent =
-    `${extractedResults.length} record${extractedResults.length !== 1 ? 's' : ''}`;
-
-  resultsTableBody.innerHTML = extractedResults.map((record, rowIndex) => `
+  recordCountLabel.textContent = `${extractedResults.length} record${extractedResults.length !== 1 ? 's' : ''}`;
+  resultsTableBody.innerHTML = extractedResults.map((r, i) => `
     <tr>
-      <td class="num" style="color:var(--muted)">${rowIndex + 1}</td>
-      <td>${displayValue(record.date)}</td>
-      <td class="num">${displayValue(record.time)}</td>
-      <td style="font-weight:500">${displayValue(record.operator)}</td>
-      <td>${buildTechGenerationBadge(record.tech)}</td>
-      <td class="num ${getSpeedQualityClass(record.download)}">
-        ${record.download != null ? record.download.toFixed(2) : '—'}
-      </td>
-      <td class="num ${getSpeedQualityClass(record.upload)}">
-        ${record.upload != null ? record.upload.toFixed(2) : '—'}
-      </td>
-      <td class="num ${getLatencyQualityClass(record.latency)}">
-        ${displayValue(record.latency)}
-      </td>
-      <td class="num">
-        ${record.jitter != null ? record.jitter.toFixed(2) : '—'}
-      </td>
-      <td class="num">
-        ${record.packetLoss != null ? record.packetLoss.toFixed(2) : '—'}
-      </td>
-      <td class="num" style="color:var(--muted2)">${displayValue(record.coverage)}</td>
-      <td>${displayValue(record.location)}</td>
-      <td style="color:var(--muted2)">${displayValue(record.server)}</td>
-      <td class="num" style="color:var(--muted)">${displayValue(record.testId)}</td>
+      <td class="num" style="color:var(--muted)">${i + 1}</td>
+      <td>${displayValue(r.date)}</td>
+      <td class="num">${displayValue(r.time)}</td>
+      <td style="font-weight:500">${displayValue(r.operator)}</td>
+      <td>${buildTechGenerationBadge(r.tech)}</td>
+      <td class="num ${getSpeedQualityClass(r.download)}">${r.download != null ? r.download.toFixed(2) : '—'}</td>
+      <td class="num ${getSpeedQualityClass(r.upload)}">${r.upload != null ? r.upload.toFixed(2) : '—'}</td>
+      <td class="num ${getLatencyQualityClass(r.latency)}">${displayValue(r.latency)}</td>
+      <td class="num">${r.jitter != null ? r.jitter.toFixed(2) : '—'}</td>
+      <td class="num">${r.packetLoss != null ? r.packetLoss.toFixed(2) : '—'}</td>
+      <td class="num" style="color:var(--muted2)">${displayValue(r.coverage)}</td>
+      <td>${displayValue(r.location)}</td>
+      <td style="color:var(--muted2)">${displayValue(r.server)}</td>
+      <td class="num" style="color:var(--muted)">${displayValue(r.testId)}</td>
     </tr>
   `).join('');
 }
 
-// ─── CSV export ───────────────────────────────────────────────────────────────
 exportCsvButton.addEventListener('click', () => {
   if (!extractedResults.length) return;
-
-  const csvHeaders = [
-    '#', 'Date', 'Time', 'Operator', 'Tech',
-    'Download (Mbps)', 'Upload (Mbps)', 'Latency (ms)', 'Jitter (ms)',
-    'Packet Loss (%)', 'Coverage', 'Location', 'Server', 'Test ID'
-  ];
-
-  const csvDataRows = extractedResults.map((record, rowIndex) => [
-    rowIndex + 1,
-    record.date       ?? '',
-    record.time       ?? '',
-    record.operator   ?? '',
-    record.tech       ?? '',
-    record.download   ?? '',
-    record.upload     ?? '',
-    record.latency    ?? '',
-    record.jitter     ?? '',
-    record.packetLoss ?? '',
-    record.coverage   ?? '',
-    record.location   ?? '',
-    record.server     ?? '',
-    record.testId     ?? ''
-  ]);
-
-  // Wrap each cell value in double quotes; escape any embedded double quotes
-  const csvContent = [csvHeaders, ...csvDataRows]
-    .map(row => row.map(cellValue => `"${String(cellValue).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-
-  const csvBlob      = new Blob([csvContent], { type: 'text/csv' });
-  const downloadUrl  = URL.createObjectURL(csvBlob);
-  const downloadLink = document.createElement('a');
-
-  downloadLink.href     = downloadUrl;
-  downloadLink.download = `speedtest_results_${new Date().toISOString().slice(0, 10)}.csv`;
-  downloadLink.click();
-
-  URL.revokeObjectURL(downloadUrl);
+  const headers = ['#','Date','Time','Operator','Tech','Download (Mbps)','Upload (Mbps)','Latency (ms)','Jitter (ms)','Packet Loss (%)','Coverage','Location','Server','Test ID'];
+  const rows = extractedResults.map((r, i) => [i+1, r.date??'', r.time??'', r.operator??'', r.tech??'', r.download??'', r.upload??'', r.latency??'', r.jitter??'', r.packetLoss??'', r.coverage??'', r.location??'', r.server??'', r.testId??'']);
+  const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `speedtest_results_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 });
 
-// ─── Clear / reset ────────────────────────────────────────────────────────────
 clearButton.addEventListener('click', () => {
-  imageQueue       = [];
-  extractedResults = [];
-
-  thumbnailQueue.innerHTML        = '';
-  actionControls.style.display    = 'none';
-  progressBarWrap.style.display   = 'none';
-  progressLabel.style.display     = 'none';
-  exportCsvButton.style.display   = 'none';
-  progressBarFill.style.width     = '0%';
-
+  imageQueue = []; extractedResults = [];
+  thumbnailQueue.innerHTML = '';
+  actionControls.style.display  = 'none';
+  progressBarWrap.style.display = 'none';
+  progressLabel.style.display   = 'none';
+  exportCsvButton.style.display = 'none';
+  progressBarFill.style.width   = '0%';
   resultsSection.classList.remove('visible');
 });
 
-// ─── Toast notifications ──────────────────────────────────────────────────────
-/**
- * Shows a brief notification banner at the bottom of the screen.
- * @param {string} message
- * @param {'info'|'error'} type
- */
 function showToast(message, type = 'info') {
-  const toastEl    = document.createElement('div');
-  toastEl.className = `toast ${type}`;
-  toastEl.textContent = message;
-
-  document.getElementById('toasts').appendChild(toastEl);
-
-  // Auto-remove after 4 seconds
-  setTimeout(() => toastEl.remove(), 4000);
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
 }
 </script>
 </body>
