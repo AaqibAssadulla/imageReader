@@ -405,6 +405,12 @@
 </header>
 
 <main>
+    <div id="apiKeySection">
+      <input type="password" id="apiKeyInput" placeholder="Enter Gemini API key…" />
+      <button id="saveKeyBtn">Save Key</button>
+      <button id="clearKeyBtn">Clear Key</button>
+      <span id="keyStatus"></span>
+    </div>
   <div class="upload-zone" id="dropZone">
     <input type="file" id="fileInput" accept="image/*" multiple />
     <div class="upload-icon">
@@ -486,6 +492,41 @@
  *   4. Results are displayed in a colour-coded table
  *   5. User can export all results as a CSV file
  */
+
+  // ─── API Key management (persisted in localStorage) ───────────────────────────
+const STORAGE_KEY = 'gemini_api_key'; // key name used in localStorage
+
+const apiKeyInput  = document.getElementById('apiKeyInput');
+const saveKeyBtn   = document.getElementById('saveKeyBtn');
+const clearKeyBtn  = document.getElementById('clearKeyBtn');
+const keyStatusEl  = document.getElementById('keyStatus');
+
+/** Loads the saved key from localStorage into the input field on page load */
+function loadSavedApiKey() {
+  const savedKey = localStorage.getItem(STORAGE_KEY);
+  if (savedKey) {
+    apiKeyInput.value = savedKey;
+    keyStatusEl.textContent = '✓ Key loaded from storage';
+  }
+}
+
+/** Saves the key from the input into localStorage */
+saveKeyBtn.addEventListener('click', () => {
+  const key = apiKeyInput.value.trim();
+  if (!key) { keyStatusEl.textContent = '⚠ Enter a key first'; return; }
+  localStorage.setItem(STORAGE_KEY, key);
+  keyStatusEl.textContent = '✓ Key saved';
+});
+
+/** Removes the key from localStorage and clears the input */
+clearKeyBtn.addEventListener('click', () => {
+  localStorage.removeItem(STORAGE_KEY);
+  apiKeyInput.value = '';
+  keyStatusEl.textContent = 'Key cleared';
+});
+
+// Run on page load so a previously saved key is ready immediately
+loadSavedApiKey();
 
 // ─── Column order used for the results table and CSV export ───────────────────
 const CSV_COLUMN_KEYS = [
@@ -669,7 +710,11 @@ function convertFileToBase64(imageFile) {
 async function extractSpeedTestDataWithGemini(base64ImageData, imageMimeType) {
 
   // Gemini API key — replace with your actual key or load from a secure config
-  const GEMINI_API_KEY = 'AIzaSyCWZjBwXzPqQnhPXP61DG1WgOLRQblgvOY';
+  
+  const GEMINI_API_KEY = localStorage.getItem(STORAGE_KEY);
+  if (!GEMINI_API_KEY) {
+    throw new Error('No API key found. Please enter and save your Gemini API key first.');
+  }
 
   // The model being used: gemini-2.0-flash is fast and vision-capable
   const GEMINI_MODEL = 'gemini-2.0-flash';
